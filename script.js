@@ -1,5 +1,7 @@
-let currentExpression = '';
-let shouldResetDisplay = false;
+let currentInput = '0';
+let previousInput = null;
+let operator = null;
+let waitingForNewInput = false;
 let history = [];
 
 const expressionDisplay = document.getElementById('expression');
@@ -7,114 +9,138 @@ const resultDisplay = document.getElementById('result');
 const historyDisplay = document.getElementById('history');
 
 function updateDisplay() {
-    expressionDisplay.textContent = currentExpression || '';
-    if (currentExpression === '') {
-        resultDisplay.textContent = '0';
+    resultDisplay.textContent = currentInput;
+    
+    // Build expression display
+    let expressionText = '';
+    if (previousInput !== null) {
+        expressionText += previousInput;
+        if (operator) {
+            expressionText += ` ${getOperatorSymbol(operator)} `;
+            if (!waitingForNewInput) {
+                expressionText += currentInput;
+            }
+        }
+    }
+    expressionDisplay.textContent = expressionText;
+}
+
+function getOperatorSymbol(op) {
+    switch(op) {
+        case '+': return '+';
+        case '-': return '−';
+        case '*': return '×';
+        case '/': return '÷';
+        default: return op;
     }
 }
 
 function inputNumber(num) {
-    if (shouldResetDisplay) {
-        currentExpression = '';
-        shouldResetDisplay = false;
+    if (waitingForNewInput || currentInput === '0') {
+        currentInput = num;
+        waitingForNewInput = false;
+    } else {
+        // Prevent multiple decimal points
+        if (num === '.' && currentInput.includes('.')) return;
+        currentInput += num;
     }
-    
-    if (num === '.' && currentExpression.slice(-1) === '.') return;
-    if (num === '.' && getCurrentNumber().includes('.')) return;
-    if (num === '0' && getCurrentNumber() === '0') return;
-    if (getCurrentNumber() === '0' && num !== '.') {
-        currentExpression = currentExpression.slice(0, -1);
-    }
-    
-    currentExpression += num;
-    resultDisplay.textContent = getCurrentNumber();
     updateDisplay();
 }
 
-function inputOperator(operator) {
-    if (currentExpression === '') {
-        if (operator === '-') {
-            currentExpression = '-';
-            updateDisplay();
-        }
-        return;
+function inputOperator(newOperator) {
+    const inputValue = parseFloat(currentInput);
+    
+    // If we have a previous calculation pending, calculate it first
+    if (previousInput !== null && operator !== null && !waitingForNewInput) {
+        const result = performCalculation();
+        if (result === null) return; // Error occurred
+        
+        currentInput = result.toString();
+        updateDisplay();
     }
     
-    if (shouldResetDisplay) {
-        shouldResetDisplay = false;
-    }
-    
-    const lastChar = currentExpression.slice(-1);
-    if (['+', '-', '*', '/'].includes(lastChar)) {
-        currentExpression = currentExpression.slice(0, -1);
-    }
-    
-    currentExpression += operator;
+    previousInput = inputValue;
+    operator = newOperator;
+    waitingForNewInput = true;
     updateDisplay();
 }
 
-function getCurrentNumber() {
-    const matches = currentExpression.match(/(\d+\.?\d*)$/);
-    return matches ? matches[0] : '0';
+function performCalculation() {
+    const prev = parseFloat(previousInput);
+    const current = parseFloat(currentInput);
+    
+    if (isNaN(prev) || isNaN(current)) return null;
+    
+    let result;
+    switch(operator) {
+        case '+':
+            result = prev + current;
+            break;
+        case '-':
+            result = prev - current;
+            break;
+        case '*':
+            result = prev * current;
+            break;
+        case '/':
+            if (current === 0) {
+                resultDisplay.textContent = 'Error';
+                clearCalculator();
+                return null;
+            }
+            result = prev / current;
+            break;
+        default:
+            return null;
+    }
+    
+    // Handle floating point precision
+    if (result % 1 !== 0) {
+        result = parseFloat(result.toFixed(10));
+    }
+    
+    return result;
 }
 
 function calculate() {
-    if (currentExpression === '' || shouldResetDisplay) return;
-    
-    try {
-        // Remove trailing operators
-        let expression = currentExpression.replace(/[+\-*/]$/, '');
-        if (expression === '') return;
-        
-        // Replace display symbols with actual operators
-        expression = expression.replace(/×/g, '*').replace(/÷/g, '/').replace(/−/g, '-');
-        
-        // Evaluate the expression
-        const result = Function('"use strict"; return (' + expression + ')')();
-        
-        if (!isFinite(result)) {
-            throw new Error('Invalid calculation');
-        }
-        
-        // Add to history
-        const historyItem = `${currentExpression} = ${result}`;
-        history.unshift(historyItem);
-        if (history.length > 10) history.pop();
-        updateHistory();
-        
-        // Update display
-        resultDisplay.textContent = result;
-        resultDisplay.classList.add('fade-in');
-        setTimeout(() => resultDisplay.classList.remove('fade-in'), 300);
-        
-        currentExpression = result.toString();
-        shouldResetDisplay = true;
-        updateDisplay();
-        
-    } catch (error) {
-        resultDisplay.textContent = 'Error';
-        shouldResetDisplay = true;
+    if (operator === null || previousInput === null || waitingForNewInput) {
+        return;
     }
+    
+    const result = performCalculation();
+    if (result === null) return;
+    
+    // Add to history
+    const expressionText = `${previousInput} ${getOperatorSymbol(operator)} ${currentInput} = ${result}`;
+    history.unshift(expressionText);
+    if (history.length > 10) history.pop();
+    updateHistory();
+    
+    // Update display with animation
+    currentInput = result.toString();
+    previousInput = null;
+    operator = null;
+    waitingForNewInput = true;
+    
+    resultDisplay.classList.add('fade-in');
+    setTimeout(() => resultDisplay.classList.remove('fade-in'), 300);
+    
+    updateDisplay();
 }
 
 function clearCalculator() {
-    currentExpression = '';
-    shouldResetDisplay = false;
-    resultDisplay.textContent = '0';
+    currentInput = '0';
+    previousInput = null;
+    operator = null;
+    waitingForNewInput = false;
     updateDisplay();
 }
 
 function deleteLast() {
-    if (shouldResetDisplay) {
-        clearCalculator();
-        return;
-    }
-    
-    currentExpression = currentExpression.slice(0, -1);
-    if (currentExpression === '' || currentExpression === '-') {
-        resultDisplay.textContent = '0';
+    if (currentInput.length > 1) {
+        currentInput = currentInput.slice(0, -1);
     } else {
-        resultDisplay.textContent = getCurrentNumber();
+        currentInput = '0';
     }
     updateDisplay();
 }
@@ -138,14 +164,21 @@ function updateHistory() {
 
 // Keyboard support
 document.addEventListener('keydown', function(event) {
-    event.preventDefault();
-    
     const key = event.key;
+    
+    // Don't prevent default for non-calculator keys
+    if (!/[0-9+\-*/.=\r\n\x1b\x08c]/.test(key) && key !== 'Enter' && key !== 'Escape' && key !== 'Backspace') {
+        return;
+    }
+    
+    event.preventDefault();
     
     if (key >= '0' && key <= '9' || key === '.') {
         inputNumber(key);
-    } else if (key === '+' || key === '-') {
-        inputOperator(key);
+    } else if (key === '+') {
+        inputOperator('+');
+    } else if (key === '-') {
+        inputOperator('-');
     } else if (key === '*') {
         inputOperator('*');
     } else if (key === '/') {
